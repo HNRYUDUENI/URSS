@@ -18,8 +18,6 @@ states_u = np.random.choice([1,-1], (N,N), p = [prob_up, 1 - prob_up])
 states_d = np.random.choice([-1,1], (N,N), p = [prob_down, 1 - prob_down])
 
 
-#plt.imshow(states_d)
-
 def RDF (lattice,x , y ,r):
     size = lattice.shape[0]
     neighbors = []
@@ -36,9 +34,7 @@ def RDF (lattice,x , y ,r):
 #print(RDF(states_d,3, 7, 5))
 
 def GofR(lattice,x,y, r):
-    distances = []
-    size = lattice.shape[0]
-              
+    distances = []              
     neighbors = RDF(lattice, x, y, r)
     spin = lattice[x, y]
     for neighbors_spin, distance in neighbors:
@@ -126,8 +122,6 @@ def metropolis(lattice, times, B, energy):
     lattice = lattice.copy()
     net_spin = np.zeros(times - 1)
     net_energy = np.zeros(times - 1)
-    #net_rdf = np.zeros(new_bins - 1)
-    #rdf_count = []
     
     for t in range(0, times - 1):
         x = np.random.randint(0,N)
@@ -159,12 +153,9 @@ def metropolis(lattice, times, B, energy):
             energy += dE
         net_spin[t] = lattice.sum()
         net_energy[t] = energy
+           
         
-        #rdf = GofR(lattice, x, y, r_max)
-        #rdf_count.append(rdf)
-        
-        
-    return net_spin, net_energy #rdf_count
+    return net_spin, net_energy 
 
 spins, energies = metropolis(states_d, 1000000, 0.2, Energy_d)
 
@@ -239,27 +230,19 @@ plt.show()
 
 
 import numpy as np
-import random
 import matplotlib.pyplot as plt
 import numba
+
 from numba import jit
-from scipy.ndimage import convolve, generate_binary_structure
+
 
 N = 50
 
-def energy_2 (lattice):
-    kern = generate_binary_structure(2,1).astype(int)
-    kern[1][1] = False
-    arr = -lattice * convolve(lattice, kern,mode = "wrap", cval = 0)
-    E = arr.sum()
-    return E
-
-
-def energy(lattice, parms = 1):
+def energy1(lattice, parms = 1):
     rows, cols = lattice.shape
     E = 0
     neighbors = [(1,0), (0,1), (-1,0), (0,-1)]
-    for x in range(rows): #changhe
+    for x in range(rows): 
         for y in range(cols):
             if lattice[x,y] == 0:
                 continue
@@ -269,8 +252,36 @@ def energy(lattice, parms = 1):
                 E += lattice[x, y] * lattice[x_neighbors, y_neighbors]
     E = parms* E
     return E
+def energy2(lattice, parms = 1):
+    rows, cols = lattice.shape
+    E = 0
+    neighbors = [(1,0),(0,1),(-1,0),(0,-1),(2,0),(0,2),(0,2),(0,-2)]
+    for x in range(rows):
+        for y in range(cols):
+            if lattice[x,y] == 0:
+                continue
+        for a, b in neighbors:
+            x_neighbors = (x + a) % rows
+            y_neighbors = (y + b) % cols
+            E += lattice[x,y] * lattice[x_neighbors, y_neighbors]
+    E = parms* E
+    return E
+def energy3(lattice, parms = 1):
+    rows, cols = lattice.shape
+    E = 0
+    neighbors = [(1,0),(1,1),(-1,1),(-1,-1),(1,-1),(0,1),(-1,0),(0,-1)]
+    for x in range(rows):
+        for y in range(cols):
+            if lattice[x,y] == 0:
+                continue
+        for a, b in neighbors:
+            x_neighbors = (x + a) % rows
+            y_neighbors = (y + b) % cols
+            E += lattice[x,y] * lattice[x_neighbors, y_neighbors]
+    E = parms* E
+    return E
 
-mat = np.zeros((50,50))
+mat = np.zeros((N,N))
 weights_d = [0.1, 0.8,0.1]
 weights_u = [0.8, 0.1, 0.1]
 def board(im, weights):
@@ -284,47 +295,26 @@ def board(im, weights):
 
 rep_u = board(mat, weights_u)
 rep_d = board(mat, weights_d)
-energy_b = energy(rep_u)
+energy_b = [(energy1(rep_u), energy2(rep_u),  energy3(rep_u),'spin up energy'),(energy1(rep_d), energy2(rep_d), energy3(rep_d),'spin down energy')]
+
 plt.imshow(rep_u)
 plt.show()
 print(energy_b)
 
 #@jit(nopython = True)
-def metropolis(lattice, times, B):
+def metropolis_new(lattice, times, B):
     lattice = lattice.copy()
     net_spin = np.zeros(times - 1)
     net_energy = np.zeros(times - 1)
-    #net_rdf = np.zeros(new_bins - 1)
-    #rdf_count = []
-    lowest_energy = energy(lattice)
+    lowest_energy = energy1(lattice)
     lowest_energy_lattice = lattice.copy()
     
     
     
-    for t in range(0, times - 1):
-        
-        x = np.random.randint(0,N)
-        y = np.random.randint(0,N)
-       # spin_i = lattice[x, y]
-        #spin_f = spin_i * -1
+    for t in range(0, times - 1):    
         lattice_f = board(lattice, weights_d)
-        E_f = energy(lattice_f)
+        E_f = energy1(lattice_f)
         
-        #E_i = 0
-        #E_f = 0
-        
-       # if x > 0 :
-          #  E_i += -spin_i * lattice[x - 1, y]
-           # E_f += -spin_f * lattice[x - 1, y]
-        #if x < N - 1:
-            #E_i += -spin_i * lattice[x + 1, y]
-            #E_f += -spin_f * lattice[x + 1, y]
-        #if y > 0:
-           # E_i += -spin_i * lattice[x, y - 1]
-           # E_f += -spin_f * lattice[x, y - 1]
-        #if y < N - 1:
-         #   E_i += -spin_i * lattice[x, y + 1]
-          #  E_f += -spin_f * lattice[x, y + 1]
         dE = E_f - lowest_energy
         if (dE > 0) * (np.random.random() < np.exp(-B * dE)):
             lattice = lattice_f.copy()
@@ -333,19 +323,15 @@ def metropolis(lattice, times, B):
             lattice = lattice_f.copy()
             
         net_spin[t] = lattice.sum()
-        current_energy = energy(lattice)
+        current_energy = energy1(lattice)
         net_energy[t] = current_energy
         if current_energy < lowest_energy:
             lowest_energy = current_energy
-            lowest_energy_lattice = lattice.copy()
+            lowest_energy_lattice = lattice.copy()   
         
-        #rdf = GofR(lattice, x, y, r_max)
-        #rdf_count.append(rdf)
-        
-        
-    return net_spin, net_energy,lowest_energy_lattice #rdf_count
+    return net_spin, net_energy,lowest_energy_lattice
 
-spins_b, energies_b,lattice_opt = metropolis(rep_u, 100, 2)
+spins_b, energies_b,lattice_opt = metropolis_new(rep_u, 100, 2)
 
 plt.imshow(lattice_opt)
 
@@ -379,7 +365,13 @@ plt.show()
 
 
 # In[ ]:
+C_V_u = (E2_mean_b_u - E_mean_b_u**2) #* Bs**2
+C_V_d = (E2_mean_b_d - E_mean_b_d**2) #* Bs**2
 
 
-new_random = np.random.choice([])
+plt.figure(figsize = (8,4))
+plt.plot(1/Bs,E_std_b_u, label = 'specific heat capacity spin up')
+plt.plot(1/Bs,C_V_d, label = 'specific heat capacity spin down')
+plt.legend()
+plt.show()
 
