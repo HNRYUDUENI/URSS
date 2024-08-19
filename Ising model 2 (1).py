@@ -236,7 +236,7 @@ import numba
 from numba import jit
 
 
-N = 50
+N = 5
 
 def energy1(lattice, parms = 1):
     rows, cols = lattice.shape
@@ -374,4 +374,120 @@ plt.plot(1/Bs,E_std_b_u, label = 'specific heat capacity spin up')
 plt.plot(1/Bs,C_V_d, label = 'specific heat capacity spin down')
 plt.legend()
 plt.show()
+# In[ ]:
+import numpy as np
+import scipy
+from scipy.constants import pi, h, electron_mass
+import matplotlib.pyplot as plt
+import numba
+from numba import jit
+def ins (lattice):
+    x, y = lattice.shape 
+    for a in range(x):
+        for b in range(y):
+            if lattice[a, b] == 0:
+                lattice[a, b] = np.random.choice([1, -1])
+                return lattice
+    return lattice            
+def rem (lattice):
+    x,y = lattice.shape
+    for a in range(x):
+        for b in range(y):
+            if lattice[a, b] != 0 :
+                lattice[a, b] = 0
+                return lattice
+    return lattice
+def Lambda (B):
+    return np.sqrt(h**2 * B/(2*pi * electron_mass))
+def number (lattice):
+    x, y = lattice.shape
+    N = 0
+    for a in range(x):
+        for b in range(y):
+            if lattice[a, b] != 0:
+                N += 1
+            elif lattice[a, b] == 0:
+                continue
+    return N
 
+#@jit(nopython = True)  
+def GCMC (lattice, times, B, mu):
+    lattice = lattice.copy()
+    net_spin = np.zeros(times - 1)
+    net_energy = np.zeros(times - 1)
+    lowest_energy = energy(lattice)
+    lowest_energy_lattice = lattice.copy()
+    Vol = lattice.shape[0] * lattice.shape[1]
+    N = number(lattice)
+    
+    for t in range(0, times -1):
+        lattice_i = board(lattice, weights_u)
+        choose_function = np.random.choice([ins, rem])
+        lattice_f = choose_function(lattice_i)
+        E_f = energy1(lattice_f)
+        N = number(lattice_f)
+        dE = E_f - lowest_energy
+        
+        print(f"Step {t}: dE = {dE},Number = {N}, Current Lattice Sum = {lattice.sum()}, Proposed Lattice Sum = {lattice_f.sum()}")
+        
+        if (dE > 0) * (np.random.random() < (np.exp(B * mu) *Vol *np.exp(-B * dE)/ N)):
+            lattice = lattice_f.copy()
+        elif dE <= 0:
+            lattice = lattice_f.copy()
+            
+        net_spin[t] = lattice.sum()
+        current_energy = energy1(lattice)
+        net_energy[t] = current_energy
+        if current_energy < lowest_energy:
+            lowest_energy = current_energy
+            lowest_energy_lattice = lattice.copy()   
+        
+    return net_spin, net_energy,lowest_energy_lattice, lattice
+
+spins_b, energies_b,lattice_opt, lattice_inp = GCMC(rep_u, 10000, 0.1, 0.3)
+
+fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+axs[0].imshow(lattice_inp, cmap = 'viridis')
+axs[0].set_title('input')
+axs[1].imshow(lattice_opt, cmap = 'viridis')
+axs[1].set_title('output')
+plt.show()
+
+fig, axes = plt.subplots(1, 2, figsize = (12, 4))
+ax = axes[0]
+ax.plot(spins_b / N**2)
+ax.set_xlabel("average time step")
+ax.set_ylabel("net spin")
+ax.grid()
+ax = axes[1]
+ax.plot(energies_b)
+ax.set_xlabel("average time step")
+ax.set_ylabel("net energy")
+ax.grid()
+fig.tight_layout()
+fig.suptitle("evelolution of spin and energy", y = 1.07, size = 18)
+plt.show()
+
+
+            
+def get_spin_energy(lattice, B, mu):
+    ms = np.zeros(len(B))
+    E_mean = np.zeros(len(B))
+    E_std = np.zeros(len(B))
+    E2_mean = np.zeros(len(B))
+    for i, b, m in enumerate(mu):
+        spins, energies = GCMC(lattice, 1000000, b, m)
+        ms[i] = spins[-100000].mean() / N**2
+        E_mean[i] = energies[-100000].mean()
+        E_std[i] = energies[-100000].std()
+        E2_mean[i] = (energies[-100000]**2).mean()
+    return ms, E_mean, E_std, E2_mean
+Bs = np.arange(0.1, 2, 0.05)
+mus = np.arange(0.1, 5, 0.05)
+ms_u, E_mean_u, E_std_u, E2_mean_u = get_spin_energy(rep_u, Bs, mus)
+ms_d, E_mean_d, E_std_d, E2_mean_d = get_spin_energy(rep_d, Bs, mus)
+
+plt.figure(figsize = (8,4))
+plt.plot(1/Bs, ms_u, 'o--')
+plt.plot(1/Bs, ms_d, 'o--')
+plt.show()
