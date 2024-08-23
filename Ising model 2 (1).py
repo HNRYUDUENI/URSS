@@ -70,9 +70,7 @@ def plot_GofR(lattice, x, y, r = 10, bins=20):
     plt.ylabel('g(r)')
     plt.title('Radial Distribution Function for Square Lattice')
     plt.show()
-
-# Example usage:
-# Assuming states_d is your lattice
+    
 plot_GofR(states_d, 2, 2, 15)
 
 
@@ -84,8 +82,6 @@ prob = 0.75
 
 states_u = np.random.choice([1,-1], (N,N), p = [prob_up, 1 - prob_up])
 states_d = np.random.choice([-1,1], (N,N), p = [prob_down, 1 - prob_down])
-#states_u = np.random.choice([1, -1, 0], (N,N), p = [0.49, 0.49, 0.02]).astype(np.float64)
-#states_d = np.random.choice([-1, 1, 0], (N,N), p = [0.49, 0.49, 0.02]).astype(np.float64)
 
 def energy(lattice):
     rows, cols = lattice.shape
@@ -236,7 +232,7 @@ from numba import njit
 
 
 
-N = 5
+N = 10
 @njit
 def energy1(lattice, parms = 1):
     rows, cols = lattice.shape
@@ -308,7 +304,7 @@ plt.imshow(rep_u)
 plt.show()
 print(energy_b)
 
-@jit(nopython = True)
+
 def metropolis_new(lattice, times, B):
     lattice = lattice.copy()
     net_spin = np.zeros(times - 1)
@@ -338,7 +334,7 @@ def metropolis_new(lattice, times, B):
         
     return net_spin, net_energy,lowest_energy_lattice
 
-spins_b, energies_b,lattice_opt = metropolis_new(rep_u, 100000, 2)
+spins_b, energies_b,lattice_opt = metropolis_new(rep_u, 100, 2)
 
 plt.imshow(lattice_opt)
 
@@ -431,16 +427,16 @@ def number (lattice):
     return N
 
 @jit  
-def GCMC (lattice, times, B, mu, r = 10, calc_rdf_steps = 100):
+def GCMC (lattice, times, B, mu):
     x, y = lattice.shape
     lattice = lattice.copy()
     net_spin = np.zeros(times - 1)
     net_energy = np.zeros(times - 1)
-    lowest_energy = energy1(lattice)
+    lowest_energy = energy3(lattice)
     lowest_energy_lattice = lattice.copy()
     Vol = lattice.shape[0] * lattice.shape[1]
     N = number(lattice)
-    rdf_distances = []
+
     
     for t in range(0, times -1):
         lattice_i = board(lattice, weights_u)
@@ -448,15 +444,9 @@ def GCMC (lattice, times, B, mu, r = 10, calc_rdf_steps = 100):
             lattice_f = ins(lattice_i)
         else:
             lattice_f = rem(lattice_i)
-        E_f = energy1(lattice_f)
+        E_f = energy3(lattice_f)
         N = number(lattice_f)
         dE = E_f - lowest_energy
-        
-        if t % calc_rdf_steps == 0:
-            distances = GofR(lattice, lattice.shape[0] // 2, lattice.shape[1] // 2, r)
-            rdf_distances.extend(distances)
-                
-        
         #print(f"Step {t}: dE = {dE},Number = {N}, Current Lattice Sum = {lattice.sum()}, Proposed Lattice Sum = {lattice_f.sum()}")
         
         if (dE > 0) * (np.random.random() < (np.exp(B * mu) *Vol *np.exp(-B * dE)/ N)):
@@ -465,18 +455,15 @@ def GCMC (lattice, times, B, mu, r = 10, calc_rdf_steps = 100):
             lattice = lattice_f.copy()
             
         net_spin[t] = lattice.sum()
-        current_energy = energy1(lattice)
+        current_energy = energy3(lattice)
         net_energy[t] = current_energy
         if current_energy < lowest_energy:
             lowest_energy = current_energy
             lowest_energy_lattice = lattice.copy()   
         
-    return net_spin, net_energy,lowest_energy_lattice, lattice,rdf_distances
+    return net_spin, net_energy,lowest_energy_lattice, lattice
 
-spins_b, energies_b,lattice_opt, lattice_inp, rdf_distances = GCMC(rep_u, 10000, 0.7, 3)
-
-
-
+spins_b, energies_b,lattice_opt, lattice_inp = GCMC(rep_u, 100000, 0.7, 4)
 
 fig, axs = plt.subplots(1, 2, figsize=(10, 5))
 axs[0].imshow(lattice_inp, cmap = 'viridis')
@@ -487,7 +474,7 @@ plt.show()
 
 fig, axes = plt.subplots(1, 2, figsize = (12, 4))
 ax = axes[0]
-ax.plot(spins_b / N**2)
+ax.plot(spins_b / number(lattice_opt)**2)
 ax.set_xlabel("average time step")
 ax.set_ylabel("net spin")
 ax.grid()
@@ -497,7 +484,7 @@ ax.set_xlabel("average time step")
 ax.set_ylabel("net energy")
 ax.grid()
 fig.tight_layout()
-fig.suptitle("evelolution of spin and energy for $\beta = 0.25 and $\mu = 1", y = 1.07, size = 18)
+fig.suptitle("evelolution of spin and energy", y = 1.07, size = 18)
 plt.show()
 
 
@@ -509,14 +496,14 @@ def get_spin_energy(lattice, B, mu):
     E_std = np.zeros(len(B))
     E2_mean = np.zeros(len(B))
     for i, (b, m) in enumerate(zip(B,mu)):
-        spins, energies,lowest_energy_lattice, lattice, rdf_distances = GCMC(lattice, a, b, m)
-        ms[i] = spins[-(a - 1)].mean() / N**2
+        spins, energies,lowest_energy_lattice, lattice = GCMC(lattice, a, b, m)
+        ms[i] = spins[-(a - 1)].mean() / number(lattice)**2
         E_mean[i] = energies[-(a - 1)].mean()
         E_std[i] = energies[-(a - 1)].std()
         E2_mean[i] = (energies[-(a - 1)]**2).mean()
     return ms, E_mean, E_std, E2_mean
-Bs = np.arange(0.1, 2, 0.05)
-mus = np.arange(0.1, 2, 0.05)
+Bs = np.arange(0.1, 10, 0.05)
+mus = np.arange(0.1, 10, 0.05)
 ms_u, E_mean_u, E_std_u, E2_mean_u = get_spin_energy(rep_u, Bs, mus)
 ms_d, E_mean_d, E_std_d, E2_mean_d = get_spin_energy(rep_d, Bs, mus)
 
@@ -538,3 +525,36 @@ axs[1].plot(Bs, E_mean_d, 'o--')
 axs[1].set_title('energy spin down chemical potential')
 plt.show()
 
+# In[ ]:
+def Grand_partition (lattice, times, B, mu, energies):
+    Z_vals = []
+    E_vals = []
+    z_set = set()
+    E_set = set()
+    for t in range(times):
+        lattice_i = board(lattice, weights_u)
+        if np.random.random() < 0.5 :
+            lattice_f = ins(lattice_i)
+        else:
+            lattice_f = rem(lattice_i)
+            
+        total_E = energies(lattice_f)
+        N_i = number(lattice_f)
+        
+        z = np.exp((N_i*mu - total_E)*B)
+        z_set.add(z)
+        E_set.add(total_E)
+        z_sum = sum(z_set)
+        
+        Z_vals.append(z_sum)
+        E_vals.append(E_set)
+              
+        print(f"Step {t}: energy = {total_E},Number = {N_i}, Partition Function = {z_sum} energy list = {E_set}")
+    return np.array(Z_vals), np.array(E_vals)
+
+B = np.linspace(1/300, 300, 10000)
+Z_vals, E_vals = Grand_partition(rep_u, 10000, B, 5e-21, energy1)
+
+plt.plot(B, Z_vals)
+plt.title('grand partition function, B ={300}')
+plt.show()
