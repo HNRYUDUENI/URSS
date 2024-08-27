@@ -353,30 +353,6 @@ fig.tight_layout()
 fig.suptitle("evelolution of spin and energy", y = 1.07, size = 18)
 plt.show()
 
-
-# In[9]:
-
-
-ms_b_u, E_mean_b_u, E_std_b_u, E2_mean_b_u = get_spin_energy(rep_u, Bs)
-ms_b_d, E_mean_b_d, E_std_b_d, E2_mean_b_d = get_spin_energy(rep_d, Bs)
-
-plt.figure(figsize = (8,4))
-plt.plot(1/Bs, ms_b_u, 'o--')
-plt.plot(1/Bs, ms_b_d, 'o--')
-plt.show()
-        
-
-
-# In[ ]:
-C_V_u = (E2_mean_b_u - E_mean_b_u**2) #* Bs**2
-C_V_d = (E2_mean_b_d - E_mean_b_d**2) #* Bs**2
-
-
-plt.figure(figsize = (8,4))
-plt.plot(1/Bs,E_std_b_u, label = 'specific heat capacity spin up')
-plt.plot(1/Bs,C_V_d, label = 'specific heat capacity spin down')
-plt.legend()
-plt.show()
 # In[ ]:
 import numpy as np
 import scipy
@@ -439,17 +415,17 @@ def GCMC (lattice, times, B, mu):
 
     
     for t in range(0, times -1):
-        lattice_i = board(lattice, weights_u)
         if np.random.random() < 0.5 :
-            lattice_f = ins(lattice_i)
+            lattice_f = ins(lattice)
         else:
-            lattice_f = rem(lattice_i)
+            lattice_f = rem(lattice)
         E_f = energy3(lattice_f)
         N = number(lattice_f)
         dE = E_f - lowest_energy
         #print(f"Step {t}: dE = {dE},Number = {N}, Current Lattice Sum = {lattice.sum()}, Proposed Lattice Sum = {lattice_f.sum()}")
-        
-        if (dE > 0) * (np.random.random() < (np.exp(B * mu) *Vol *np.exp(-B * dE)/ N)):
+        if N == 0:
+            continue
+        elif (dE > 0) * (np.random.random() < (np.exp(B * mu) *Vol *np.exp(-B * dE)/ N)):
             lattice = lattice_f.copy()
         elif dE <= 0:
             lattice = lattice_f.copy()
@@ -463,7 +439,7 @@ def GCMC (lattice, times, B, mu):
         
     return net_spin, net_energy,lowest_energy_lattice, lattice
 
-spins_b, energies_b,lattice_opt, lattice_inp = GCMC(rep_u, 100000, 0.7, 4)
+spins_b, energies_b,lattice_opt, lattice_inp = GCMC(rep_u, 100000, 0.7, 0.5)
 
 fig, axs = plt.subplots(1, 2, figsize=(10, 5))
 axs[0].imshow(lattice_inp, cmap = 'viridis')
@@ -526,35 +502,55 @@ axs[1].set_title('energy spin down chemical potential')
 plt.show()
 
 # In[ ]:
-def Grand_partition (lattice, times, B, mu, energies):
-    Z_vals = []
-    E_vals = []
-    z_set = set()
+@njit
+def Grand_partition(lattice, times, b, mu, energies):
+    z_sum = 0
     E_set = set()
+    
     for t in range(times):
-        lattice_i = board(lattice, weights_u)
-        if np.random.random() < 0.5 :
-            lattice_f = ins(lattice_i)
+        if np.random.random() < 0.5:
+            lattice_f = ins(lattice)
         else:
-            lattice_f = rem(lattice_i)
-            
+            lattice_f = rem(lattice)
+
         total_E = energies(lattice_f)
         N_i = number(lattice_f)
         
-        z = np.exp((N_i*mu - total_E)*B)
-        z_set.add(z)
+        z = np.exp((N_i * mu - total_E) * 1/b)
+        z_sum += z
         E_set.add(total_E)
-        z_sum = sum(z_set)
         
-        Z_vals.append(z_sum)
-        E_vals.append(E_set)
-              
-        print(f"Step {t}: energy = {total_E},Number = {N_i}, Partition Function = {z_sum} energy list = {E_set}")
-    return np.array(Z_vals), np.array(E_vals)
+    print(f"timestep = {t}, Partition Function Sum for b = {b}: {z_sum}")
+    return z_sum, E_set
 
-B = np.linspace(1/300, 300, 10000)
-Z_vals, E_vals = Grand_partition(rep_u, 10000, B, 5e-21, energy1)
+
+B = np.linspace(0.01,50 , 100) 
+mu = 5e-21
+times = 1000
+
+
+Z_vals = []
+E_vals = []
+
+for b in B:
+    z_sum, E_set = Grand_partition(states_u, times, b, mu, energy1)
+    Z_vals.append(z_sum)  
+
+
+Z_vals = np.array(Z_vals) 
+
 
 plt.plot(B, Z_vals)
-plt.title('grand partition function, B ={300}')
+plt.title('Grand Partition Function vs Temperature')
+plt.xlabel('Beta $\\mathcal{1/kbT}$')
+plt.ylabel('Partition Function $\\mathcal{Z}$')
+plt.grid(True)
+plt.show()
+
+Z_vals = Z_vals[np.isfinite(Z_vals)] 
+plt.hist(E_set, bins=30, edgecolor='black')  
+plt.title('Histogram of Partition Function Values')
+plt.xlabel('Partition Function $\\mathcal{Z}$')
+plt.ylabel('Frequency')
+plt.grid(True)
 plt.show()
